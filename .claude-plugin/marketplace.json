@@ -1,0 +1,17 @@
+{
+  "name": "fia-plugin",
+  "owner": {
+    "name": "agentictrain"
+  },
+  "metadata": {
+    "description": "The fia plugin for projects with the Factory installed."
+  },
+  "plugins": [
+    {
+      "name": "fia",
+      "source": "./",
+      "description": "Skills for operating the Factory on a project it is installed on: fia-todo and fia-conductor.",
+      "version": "0.1.0"
+    }
+  ]
+}

@@ -20,8 +20,8 @@ the one-liner.
 
 ## Who reads the issue
 
-The main reader is an agent, the Factory **planner**, followed by the plan reviewer, the coder
-and the code reviewer. Three facts about that reader shape everything
+The main reader is an agent, the Factory **planner**, followed by the plan
+reviewer, the coder and the code reviewer. Three facts about that reader shape everything
 below:
 
 - **It sees the title, the body and the human comments.** The Factory
@@ -48,9 +48,10 @@ in your system prompt. Shell state doesn't persist between calls, so set
 `SCRATCH=<that path>` at the start of every command that uses it.
 
 The target is the repository of the current directory, read from its
-`origin` remote. When the user names another one (`owner/repo`, a project
-path or a URL), set `u` to its URL in place of the remote. Run this once. It never prints the remote URL, which can hold a
-credential:
+`origin` remote. When the user names another one, replace the first line's
+`git remote get-url origin` with its URL; a bare `owner/repo` is
+`https://github.com/owner/repo`. Run this once. It never prints the remote
+URL, which can hold a credential:
 
 ```sh
 u=$(git remote get-url origin) || { echo "no origin remote: run from a clone of the target repository"; exit 1; }

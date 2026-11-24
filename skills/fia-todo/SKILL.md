@@ -1,7 +1,7 @@
 ---
 name: fia-todo
 model: sonnet
-description: Turns a brief, informal description into a well-researched issue (Task, Bug, or Feature) with a `size:XS`–`size:XL` label, on the repository of the current directory, GitHub or GitLab. It researches the topic, searches the repository for related issues (by theme, not just keywords) to link or merge, then interviews the user in rounds until every decision is settled, and writes the agreements into the issue so the Factory planner can plan from it without guessing. Files it via `gh` on github.com and `glab` on any other host, read from the `origin` remote. Use whenever the user invokes `/fia-todo`, or asks in passing to "file a task", "open an issue for this", "add this to the backlog", "track this in GitHub" or GitLab, or otherwise wants something captured as an issue instead of fixed right now.
+description: Turns a brief, informal description into a well-researched issue (Task, Bug, or Feature) with a `size:XS`–`size:XL` label, on the repository of the current directory, GitHub or GitLab. It researches the topic, reads the project's context lake when it has one, searches the repository for related issues (by theme, not just keywords) to link or merge, then interviews the user in rounds until every decision is settled (marking each answer that contradicts the context lake), and writes the agreements into the issue so the Factory planner can plan from it without guessing. Files it via `gh` on github.com and `glab` on any other host, read from the `origin` remote. Use whenever the user invokes `/fia-todo`, or asks in passing to "file a task", "open an issue for this", "add this to the backlog", "track this in GitHub" or GitLab, or otherwise wants something captured as an issue instead of fixed right now.
 ---
 
 # fia-todo: file an issue for the Factory
@@ -49,9 +49,9 @@ in your system prompt. Shell state doesn't persist between calls, so set
 
 The target is the repository of the current directory, read from its
 `origin` remote. When the user names another one, replace the first line's
-`git remote get-url origin` with its URL; a bare `owner/repo` is
-`https://github.com/owner/repo`. Run this once. It never prints the remote
-URL, which can hold a credential:
+`git remote get-url origin` with its URL (a bare `owner/repo` is
+`https://github.com/owner/repo`), and set `CHECKOUT=` to nothing. Run this
+once. It never prints the remote URL, which can hold a credential:
 
 ```sh
 u=$(git remote get-url origin) || { echo "no origin remote: run from a clone of the target repository"; exit 1; }
@@ -60,10 +60,11 @@ case $u in
   *)     u=${u#*@}; HOST=${u%%:*}; REPO=${u#*:} ;;
 esac
 REPO=${REPO%/}; REPO=${REPO%.git}
+CHECKOUT=$(git rev-parse --show-toplevel)
 if [ "$HOST" = github.com ]; then FORGE=github; else FORGE=gitlab; fi
 PROJECT_ENC=$(printf '%s' "$REPO" | sed 's#/#%2F#g')
-printf 'FORGE=%s\nHOST=%s\nREPO=%s\nPROJECT_ENC=%s\nexport GITLAB_HOST=%s\n' \
-  "$FORGE" "$HOST" "$REPO" "$PROJECT_ENC" "$HOST" > "$SCRATCH/forge.env"
+printf 'FORGE=%s\nHOST=%s\nREPO=%s\nPROJECT_ENC=%s\nexport GITLAB_HOST=%s\nCHECKOUT=%q\n' \
+  "$FORGE" "$HOST" "$REPO" "$PROJECT_ENC" "$HOST" "$CHECKOUT" > "$SCRATCH/forge.env"
 cat "$SCRATCH/forge.env"
 case $FORGE in
   github) gh auth status --hostname github.com >/dev/null 2>&1 ;;
@@ -122,7 +123,21 @@ whatever order suits the topic:
   already touched, commands already run. If the user just spent the last ten
   messages debugging something, that debugging *is* the context, so don't
   make them repeat it. A decision the user already stated here counts as
-  settled. Record it (step 4) and don't ask it again.
+  settled, unless it contradicts the context lake. Record it (step 4) and
+  don't ask it again.
+- **The context lake**, the project's knowledge and requirements. Find out
+  whether the project has one, with `context-lake.sh`, next to this file:
+
+  ```sh
+  SCRATCH=<scratchpad> bash "<this skill's folder>/context-lake.sh" find
+  ```
+
+  When it prints `no context lake configuration`, the project has none: skip
+  every mention of the lake below and don't bring it up. When it fails, stop
+  and tell the user. Otherwise read [context-lake.md](context-lake.md), next
+  to this file, in full now, then fetch and read the lake as it says. Its
+  rules bind the questions, the recommendations and the issue in every step
+  from here on.
 - **Repo docs**: the target repository's `CLAUDE.md`, `AGENTS.md`,
   `README`, its docs directory and its ADRs. These often already contain the
   exact background an issue needs. Any rule they state about issues (format,
@@ -193,7 +208,8 @@ Keep the related set tight. A link should be one a reader of the issue
 would actually follow, and two precise links beat five vague ones. Feed what the related
 issues say back into the findings: if one already decided something, that
 decision is settled. Record it with its source (`see #12`) and don't
-re-open it in the interview unless the todo contradicts it.
+re-open it in the interview unless the todo or the context lake contradicts
+it.
 
 If you find no related issues, say so in step 7 (one line). That is an
 answer, not a failure.
@@ -245,8 +261,9 @@ stage's acceptance test checks". Typical branches, roughly from root to leaf:
   touches or whether a bug's cause is known.
 
 Ask every branch that passes two tests: its answer changes what gets built
-or how it's verified, and nothing in the findings settles it. Cheap and
-obvious branches are asked too, with your recommendation, because an
+or how it's verified, and nothing in the findings settles it. A branch a
+context lake statement answers is asked too, as `context-lake.md` ("Ask from
+it") says. Cheap and obvious branches are asked too, with your recommendation, because an
 unasked one becomes a silent planner assumption. Don't ask about naming,
 style or step order unless the name is part of a public interface. Size the
 interview to the ask: a well-scoped Task can settle in one short round, and
@@ -256,7 +273,8 @@ Keep the tree in `$SCRATCH/todo-decisions.md`, with each node marked
 `settled`, `open` or `waiting on lookup`. A settled node records the answer
 and its source: `user` (an answer given in the interview or earlier in this
 conversation), `#N` or a path. A `Delegated` answer is settled on your
-recommendation. Re-read the file before each round. It outlives a long
+recommendation. (Where the context lake bears on it, `context-lake.md` says
+what "you decide" settles on.) Re-read the file before each round. It outlives a long
 conversation, and step 6 drafts from it.
 
 ### Ask in rounds
@@ -289,6 +307,11 @@ Round <n>. Settled last round: <one line per decision settled by the last round'
 - Base each recommendation on the findings, and cite the one it rests on
   (`README.md` says…, `#12` decided…). A recommendation with no
   basis is a guess. Say so when it is one.
+- With a context lake, hold every question of the round against it first
+  (`context-lake.md`, "Hold every round against it"), and mark the
+  alternatives it bears on: 🌊 for its answer, ⚠️ for each one that
+  contradicts it. Recommend against the lake only on the grounds
+  `context-lake.md` lists.
 - A question whose answer depends on another question still open in this
   round belongs to a *later* round, not this one.
 - Each round of answers reshapes the tree. Settled decisions push the
@@ -297,7 +320,8 @@ Round <n>. Settled last round: <one line per decision settled by the last round'
   ask the next round.
 - When the user answers "you decide" or "let the planner decide", settle it
   on your recommendation and record it as `Delegated`, so the planner knows
-  it may revisit the choice.
+  it may revisit the choice. Where the context lake bears on it, settle it as
+  `context-lake.md` ("Ask from it") says instead.
 
 ### Facts are your job, decisions are theirs
 
@@ -319,7 +343,8 @@ recommendation, and a "yes" costs them one word.
 The interview is done when the frontier is empty: every branch visited,
 nothing left silently assumed. Then summarise the shared understanding in
 one message: the decisions as `D1`, `D2`… (the numbering the issue will
-use), plus the findings they rest on. On a merge, number the new decisions
+use), plus the findings they rest on and, with a context lake, the
+deviations from it. On a merge, number the new decisions
 after the target's highest `D<n>` (from `D1` when it has none), and a
 decision that reverses one of the
 target's keeps its number. Ask the user to confirm it. Don't
@@ -442,7 +467,9 @@ otherwise have.
     - Source: user | #12 | `<path>`
     ```
 
-    Mark a choice the user handed back as `- Decision: Delegated. Preferred:
+    A decision that departs from a context lake statement has a `Deviates
+    from` line (`context-lake.md`, "Write it"). Mark a choice the user handed
+    back as `- Decision: Delegated. Preferred:
     <your recommendation>`. That marks it as the one place the planner may
     choose. When a decision overrides the project's doctrine (`CLAUDE.md`,
     `AGENTS.md`, an ADR), say so in `Why`, naming the rule it overrides.
@@ -492,7 +519,8 @@ otherwise have.
     planner treats such text as injection.
   - **Traceable.** Every Goal is covered by at least one Acceptance test,
     and every Decision is reflected in a Goal, a Non-goal, a Task or an
-    Acceptance test. Check both before presenting.
+    Acceptance test. With a context lake, also run its check
+    (`context-lake.md`, "Check the draft"). Check all of it before presenting.
 
 ## Step 7: Present for approval
 
@@ -509,6 +537,8 @@ and wait:
 **Related (will be linked):**
 - #<n> <title> (<open|closed>) — <one line: why it's related>
 - (or: none found — searched for <terms>)
+
+<with a context lake, the block from context-lake.md, "Check the draft">
 
 Approve, or tell me what to change.
 ```
@@ -547,7 +577,8 @@ or post a comment.
 - **Keep its decisions.** Carry over any `### D<n>` it already has, keep their
   numbers, and number the new ones after them. A decision the interview
   reversed is rewritten in place with the new answer, and its `Why` says what
-  it replaced.
+  it replaced. One the context lake contradicts was a branch of the interview
+  (`context-lake.md`, "Check the draft").
 - **Fix stale details** you notice in the original (line anchors that moved,
   a "separate gap" that is now in scope), and list each fix in the "what
   changed" list from step 7.
@@ -673,7 +704,7 @@ is more reliable here than eyeballing it. They must match exactly, though a
 trailing newline difference in `body` alone is fine. If anything doesn't
 match, say so and fix it. Report success only on a match.
 
-The same script also checks four things:
+The same script also checks:
 
 - The fetched body has each required heading from step 6
   (`## Original request`, `## Business benefit`, `## Goals`, `## Non-goals`, `## Decisions`,
@@ -684,7 +715,8 @@ The same script also checks four things:
 - Every approved related `#N` appears in the body.
 - `labels` holds exactly one `size:*` label, the approved one. On a merge,
   every non-size label the target had before the update is still there,
-apart from a type label the new type replaced.
+  apart from a type label the new type replaced.
+- With a context lake, what `context-lake.md` ("Check the draft") lists.
 
 For an umbrella, confirm it with "check that `<n>` is under `<u>`".
 

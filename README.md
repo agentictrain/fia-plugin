@@ -4,7 +4,9 @@ A Claude Code marketplace with one plugin, `fia`, for projects that have the
 Factory installed. It holds two skills:
 
 - `fia-todo` turns a short description into an issue the Factory planner can
-  plan from, with its type and `size:*` label.
+  plan from, with its type and `size:*` label. When the project has a context
+  lake, it reads it, follows its links, and asks, recommends and records
+  decisions against it.
 - `fia-conductor` runs issues through the Factory one at a time: trigger,
   plan, approve, build, get CI green, merge, then the follow-ups.
 

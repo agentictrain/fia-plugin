@@ -1,6 +1,6 @@
 ---
 name: fia-todo
-model: sonnet
+model: opus
 description: Turns a brief, informal description into a well-researched issue (Task, Bug, or Feature) with a `size:XS`–`size:XL` label, on the repository of the current directory, GitHub or GitLab. It researches the topic, reads the project's context lake when it has one, searches the repository for related issues (by theme, not just keywords) to link or merge, then interviews the user in rounds until every decision is settled (marking each answer that contradicts the context lake), and writes the agreements into the issue so the Factory planner can plan from it without guessing. Files it via `gh` on github.com and `glab` on any other host, read from the `origin` remote. Use whenever the user invokes `/fia-todo`, or asks in passing to "file a task", "open an issue for this", "add this to the backlog", "track this in GitHub" or GitLab, or otherwise wants something captured as an issue instead of fixed right now.
 ---
 

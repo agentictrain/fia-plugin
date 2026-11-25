@@ -11,7 +11,7 @@
       "name": "fia",
       "source": "./",
       "description": "Skills for operating the Factory on a project it is installed on: fia-todo and fia-conductor.",
-      "version": "0.2.0"
+      "version": "0.2.1"
     }
   ]
 }

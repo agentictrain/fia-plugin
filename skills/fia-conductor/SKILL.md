@@ -1,6 +1,6 @@
 ---
 name: fia-conductor
-description: Operates the Factory on the repository of the current directory (GitHub or GitLab, read from the `origin` remote) issue by issue. For each issue it adds the trigger label, waits for the plan, approves it, waits for the PR or MR, fixes its CI until it is green, merges it, runs the `class:follow-up` issues that the implementation filed through the same process, and moves on. When the cause of a failure is the Factory itself, it fixes the Factory first and retries when the repository is the Factory's own, and files a Bug on the Factory's repository otherwise. Takes a list of issues (`#22 #25 31`), a label (`label:<name>`, every open issue with it, oldest first) or a maximum size (`max:M`, the default). Keeps a TSV worklog in `.audit/`. Use when the operator invokes `/fia-conductor`, or asks to "run the factory on the backlog", "implement the open issues up to size S", "drain the issues", "shepherd issue #N through the factory", or "operate the factory".
+description: Operates the Factory on the repository of the current directory (GitHub or GitLab, read from the `origin` remote) issue by issue. For each issue it adds the trigger label, waits for the plan, approves it, waits for the PR or MR, fixes its CI until it is green, merges it, runs the `class:follow-up` issues that the implementation filed through the same process (leaving those with a `human:*` label to a human and listing them in its report), and moves on. When the cause of a failure is the Factory itself, it fixes the Factory first and retries when the repository is the Factory's own, and files a Bug on the Factory's repository otherwise. Takes a list of issues (`#22 #25 31`), a label (`label:<name>`, every open issue with it, oldest first) or a maximum size (`max:M`, the default). Keeps a TSV worklog in `.audit/`. Use when the operator invokes `/fia-conductor`, or asks to "run the factory on the backlog", "implement the open issues up to size S", "drain the issues", "shepherd issue #N through the factory", or "operate the factory".
 argument-hint: "[#<issue> [#<issue> ...] | label:<name> | max:<XS|S|M|L|XL>]"
 ---
 
@@ -100,13 +100,14 @@ call prints its error JSON on stdout.
 | close an issue | `gh issue close <n> -R "$REPO" --comment "<text>"` | comment, then `glab api --method PUT "projects/$PROJECT_ENC/issues/<n>"` with `{"state_event": "close"}` |
 | read a plan | the secret gist the plan comment links: `gh gist view <id> --raw` | the project snippet the plan comment links: `glab api "projects/$PROJECT_ENC/snippets/<id>/raw"` |
 | find the Factory run of an issue | `gh run list -R "$REPO" --workflow factory.yml --limit 5 --json databaseId,status,conclusion,event,displayTitle`: the newest `in_progress` or `queued` run whose title is the issue's title | the newest `🏭 Factory pipeline started: <url>` comment on the issue posted after your action; the pipeline id ends the URL. Trigger pipelines: `glab api "projects/$PROJECT_ENC/pipelines?source=trigger&per_page=5"` |
-| wait for a run (background) | `gh run watch <id> -R "$REPO" --interval 30` | a loop that re-reads `glab api "projects/$PROJECT_ENC/pipelines/<id>" \| jq -r .status` every 30 seconds until it is `success`, `failed`, `canceled` or `skipped` |
+| wait for a run (background) | a loop that re-reads `gh run view <id> -R "$REPO" --json status --jq .status` every 30 seconds until it prints `completed` (the `watch` subcommand can exit 0 while the run is still `in_progress`) | a loop that re-reads `glab api "projects/$PROJECT_ENC/pipelines/<id>" \| jq -r .status` every 30 seconds until it is `success`, `failed`, `canceled` or `skipped` |
 | a run's jobs | `gh run view <id> -R "$REPO" --json conclusion,jobs` | `glab api "projects/$PROJECT_ENC/pipelines/<id>/jobs" \| jq '[.[] \| {id, name, stage, status}]'` |
 | a job's log | `gh api "repos/$REPO/actions/jobs/<job-id>/logs"` (`gh run view --log-failed` can fail with a permission error on its cache) | `glab api "projects/$PROJECT_ENC/jobs/<job-id>/trace"` |
 | open PR or MR of a branch | `gh pr list -R "$REPO" --state open --head <branch> --json number,url,title` | `glab api "projects/$PROJECT_ENC/merge_requests?state=opened&source_branch=<branch, URL-encoded>" \| jq '[.[] \| {number: .iid, url: .web_url, title}]'` |
 | the CI runs of a PR or MR | `gh run list -R "$REPO" --branch <branch> --limit 3 --json databaseId,workflowName,status,conclusion,headSha` | `glab api "projects/$PROJECT_ENC/merge_requests/<mr>/pipelines" \| jq '[.[] \| {id, status, sha}]'` |
 | merge a PR or MR | `gh pr merge <mr> -R "$REPO" --merge` | `glab mr merge <mr> -R "$REPO" --yes --auto-merge=false` |
 | read a PR or MR | `gh pr view <mr> -R "$REPO" --json state,mergedAt,body,mergeCommit` | `glab api "projects/$PROJECT_ENC/merge_requests/<mr>" \| jq '{state, merged_at, body: .description, merge_commit_sha}'` (`state` is `merged` once merged) |
+| whether a PR or MR can merge | `gh pr view <mr> -R "$REPO" --json mergeable,mergeStateStatus`: not mergeable when `mergeable` is `CONFLICTING` or `mergeStateStatus` is `BEHIND`; read again while `mergeable` is `UNKNOWN` | `glab api "projects/$PROJECT_ENC/merge_requests/<mr>" \| jq '{has_conflicts, detailed_merge_status}'`: not mergeable when `has_conflicts` is `true` or `detailed_merge_status` is `conflict` or `need_rebase`; read again while it is `checking` or `unchecked` |
 | close a PR or MR | `gh pr close <mr> -R "$REPO" --comment "<text>"` | comment with `glab api --method POST "projects/$PROJECT_ENC/merge_requests/<mr>/notes"`, then `glab api --method PUT "projects/$PROJECT_ENC/merge_requests/<mr>"` with `{"state_event": "close"}` |
 | default branch | `gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name` | `glab api "projects/$PROJECT_ENC" \| jq -r .default_branch` |
 
@@ -147,7 +148,8 @@ that already has `factory:running` or an open PR or MR from
 Every issue in the queue brings its follow-ups with it: after it is merged,
 the `class:follow-up` issues the Factory filed for it run next, one by one,
 before the next issue of the queue (step 7). They run whatever their size
-and whatever their labels.
+and whatever their labels, except a `human:*` label: such a follow-up is
+left for a human.
 
 ## Answering questions
 
@@ -310,11 +312,39 @@ change the issue's decisions, do not ask: leave the PR or MR open,
 log a `skip` row with the reason and the run IDs, and go on to the next
 issue. Name it in the final report.
 
+When every job passes, check "whether a PR or MR can merge". The default
+branch can move while CI runs, for example when another PR or MR lands,
+and the PR or MR stops being mergeable. Then bring it up to date by merging
+the default branch into it. Never rebase it and never force-push:
+
+1. Check out `factory/issue-N` as in step 2 of the failing-job list, then
+   `git fetch -q origin && git merge --no-ff --no-commit origin/<default branch>`.
+2. List the conflicts with `git diff --name-only --diff-filter=U`. Resolve
+   each one by keeping both sides when they are independent (two additions
+   at the same place, two edits of different things that touch the same
+   lines). When the two sides cannot both be kept (they change the same
+   thing in different ways, or keeping both breaks what one of them does),
+   run `git merge --abort`, leave the PR or MR open, log a `skip` row that
+   names the conflicting files, and go on to the next issue.
+3. Run the narrowest tests that cover the files the merge touched, as in
+   step 3 of the failing-job list.
+4. Check that `git branch --show-current` prints `factory/issue-N`. Commit
+   the merge with the subject `Merge origin/<default branch> into factory/issue-N`
+   and a body that names each conflicting file and how you resolved it
+   (or says there was no conflict), ending with the attribution line from
+   the system prompt. Push with the explicit refspec:
+   `git push origin factory/issue-N:factory/issue-N`.
+5. Log a `fix` row with the merge commit, and watch the new CI run from the
+   top of this step.
+
 ### 6. Merge
 
 When every job is `success`, merge ("merge a PR or MR"), then read the PR
 or MR back ("read a PR or MR") and the issue ("read an issue") to see their
-state.
+state. If the merge fails because the PR or MR is not mergeable (on GitHub
+`Pull request #<mr> is not mergeable`; check "whether a PR or MR can
+merge"), bring it up to date as at the end of step 5 and merge again once
+its CI is green.
 
 The PR or MR says `Closes #N`, so the merge closes the issue. Check that it
 did. If the issue is still open, log it and close it with a comment that
@@ -347,7 +377,7 @@ trigger the next issue until that push has finished.
    or config starts no run: if none appears, check that the merge's files
    are all outside the `on.push.paths` list of `.github/workflows/ci.yml`,
    log that `:qa` is unchanged, and go to step 7.
-2. In the background: `gh run watch <id> -R "$REPO" --interval 30`.
+2. In the background, wait for it ("wait for a run").
 3. Read the conclusion of the push step, not only the run's:
 
    ```sh
@@ -362,6 +392,20 @@ trigger the next issue until that push has finished.
    as in step 5 and treat it as a Factory failure: fix it through a PR as
    in "When the Factory fails" (never push to `main` directly), then wait
    for that merge's image the same way. Then go to step 7.
+5. A green push step does not prove that `:qa` still holds that build:
+   something outside CI can push over it before the next run pulls it.
+   Run the image the Factory's workflow runs and read what it reports:
+
+   ```sh
+   img=$(grep -oE '[^[:space:]"]+:qa' .github/workflows/factory.yml | head -1)
+   docker run --rm --pull always "$img" version
+   ```
+
+   It prints `fia version <branch> (commit <sha>, built <date>)`. The
+   branch must be the default branch and the SHA the merge commit's
+   (`$sha` from 1.). Log the printed line in an `image` row. When either
+   differs, do not start the next issue, and treat it as a Factory failure
+   ("When the Factory fails").
 
 ### 7. Follow-ups
 
@@ -387,7 +431,14 @@ Take the union, keep the open ones, and order them oldest first. Log one
 can live in another project (the `followup_projects` option); log it and
 leave it out, since this run covers only the target repository.
 
-Then run each follow-up, one at a time, through the whole loop from step 1
+Leave out, too, every follow-up that has a label starting with `human:`
+(such as `human:to-validate`): it asks for a check only a human can run (a
+live check, an acceptance run, a run that needs a published image or
+credentials), and the Factory would only fail on it. Do not add
+`factory:start` to it. Log a `followup` row `#F: left for a human
+(human:<label>)` with its URL as evidence, and list it in the final report.
+
+Then run each follow-up that is left, one at a time, through the whole loop from step 1
 (read its body) to step 6b, with the same checks as any pick: skip it if it
 is closed, has `factory:running`, has an open PR or MR from
 `factory/issue-F`, or was already handled in this run. When a follow-up is
@@ -398,7 +449,8 @@ follow-ups are done before the queue moves on.
 ### 8. Next
 
 Go to step 1 for the next issue of the original queue only when the issue
-and all its follow-ups (and theirs) are merged or skipped. Exit when the
+and all its follow-ups (and theirs) are merged, skipped or left for a
+human. Exit when the
 queue is empty: with a list, after every issue in it is merged or skipped;
 with `label:<name>`, when every open issue with the label is merged,
 skipped or already handled in this run; with `max:<size>`, when every open
@@ -487,7 +539,9 @@ an issue of the queue), PR or MR, the fix commits you added (with one
 sentence each on what failed), and the merge time. Then list the issues left
 open and why (bigger than the limit, no size label, already running, or
 skipped by this run, with the reason; with `label:<name>`, name the label), any
-follow-ups filed in another project, every default taken for a question
+follow-ups filed in another project, a section "Follow-ups waiting for a
+human" with each follow-up left out for its `human:*` label (number, title,
+URL and the label), every default taken for a question
 the operator did not answer (issue, question, answer), the Bugs filed on
 the Factory's repository (tenant), any Factory root causes you saw but did
 not fix, and the worklog's path.

@@ -1,6 +1,6 @@
 ---
 name: fia-conductor
-description: Operates the Factory on the repository of the current directory (GitHub or GitLab, read from the `origin` remote) issue by issue. For each issue it adds the trigger label, waits for the plan, approves it, waits for the PR or MR, fixes its CI until it is green, merges it, runs the `class:follow-up` issues that the implementation filed through the same process (leaving those with a `human:*` label to a human and listing them in its report), and moves on. When the cause of a failure is the Factory itself, it fixes the Factory first and retries when the repository is the Factory's own, and files a Bug on the Factory's repository otherwise. Takes a list of issues (`#22 #25 31`), a label (`label:<name>`, every open issue with it, oldest first) or a maximum size (`max:M`, the default). Keeps a TSV worklog in `.audit/`. Use when the operator invokes `/fia-conductor`, or asks to "run the factory on the backlog", "implement the open issues up to size S", "drain the issues", "shepherd issue #N through the factory", or "operate the factory".
+description: Operates the Factory on the repository of the current directory (GitHub or GitLab, read from the `origin` remote) issue by issue. For each issue it adds the trigger label, waits for the plan, approves it, waits for the PR or MR, fixes its CI until it is green, merges it, runs the `class:follow-up` issues that the implementation filed through the same process (leaving those with a `human:*` label to a human and listing them in its report), and moves on. When the cause of a failure is the Factory itself, it fixes the Factory first and retries when the repository is the Factory's own, and files a Bug on the Factory's repository otherwise. Takes a list of issues (`#22 #25 31`), a label (`label:<name>`, every open issue with it, oldest first) or a maximum size (`max:M`, the default). Does its git work in worktrees under the scratchpad and leaves the operator's checkout on the branch and commit it found, and keeps an untracked TSV worklog in the checkout's `.audit/`. Use when the operator invokes `/fia-conductor`, or asks to "run the factory on the backlog", "implement the open issues up to size S", "drain the issues", "shepherd issue #N through the factory", or "operate the factory".
 argument-hint: "[#<issue> [#<issue> ...] | label:<name> | max:<XS|S|M|L|XL>]"
 ---
 
@@ -183,11 +183,60 @@ documents), decide it yourself: take the answer you would recommend, the
 one that best follows the issue's goals and the repository's `CLAUDE.md` or
 `AGENTS.md`, and log it as a `default` row like any other.
 
+## Local trees
+
+The operator keeps working in the checkout the run starts in, from other
+sessions, and can switch its branch at any time. So the run never switches,
+checks out, pulls, merges, commits or pushes in it. Every step that needs a
+tree works in a git worktree under `$SCRATCH`, and never in the checkout.
+
+Once `forge.env` is written (above), record the checkout in it and log its
+branch and commit in the `start` row:
+
+```sh
+CHECKOUT=$(git rev-parse --show-toplevel)
+printf 'CHECKOUT=%q\n' "$CHECKOUT" >> "$SCRATCH/forge.env"
+git -C "$CHECKOUT" branch --show-current; git -C "$CHECKOUT" rev-parse HEAD
+```
+
+Make each worktree from the checkout, after `git fetch -q origin`:
+
+| For | Worktree | Make it with |
+|---|---|---|
+| a fix or an update of the PR or MR branch (step 5) | `$SCRATCH/wt-issue-N` | `git worktree add -b factory/issue-N "$SCRATCH/wt-issue-N" origin/factory/issue-N` |
+| a local check of merged code | `$SCRATCH/wt-<default branch>` | `git worktree add --detach "$SCRATCH/wt-<default branch>" origin/<default branch>` |
+| a Factory fix ("When the Factory fails") | `$SCRATCH/wt-fix-<slug>` | `git worktree add -b fix/<slug> "$SCRATCH/wt-fix-<slug>" origin/<default branch>` |
+
+When the worktree already exists, bring it to `origin` instead:
+`git -C "$SCRATCH/wt-issue-N" merge --ff-only origin/factory/issue-N`, or
+`git -C "$SCRATCH/wt-<default branch>" checkout --detach origin/<default branch>`.
+When a local `factory/issue-N` branch exists but no worktree of this run
+holds it, add the worktree on it (`git worktree add "$SCRATCH/wt-issue-N" factory/issue-N`)
+and fast-forward it the same way. If git refuses because the branch is
+checked out elsewhere, or the fast-forward fails because the local branch
+has commits that `origin` lacks, someone else is working on it: log a `skip`
+row and leave the PR or MR open.
+
+Run git in a worktree with `git -C <worktree> …`, and any other command (a
+test, a build, a script) in a subshell, `(cd <worktree> && …)`, so the
+shell stays in the checkout. A local check of code on the default branch
+(that a merged fix holds, or a failure on the default branch) runs in
+`wt-<default branch>`: the checkout can be on any branch and at any commit.
+
+Remove a worktree with `git worktree remove <worktree>` once its PR or MR
+is merged, its issue skipped, or its check done, and then delete the local
+branch it held, if this run created it (`git branch -D factory/issue-N`).
+Add `--force` only when what it would discard is a merge or a fix the run
+abandoned.
+
+At exit, log the checkout's branch and commit again in the `exit` row.
+
 ## Worklog
 
-Before the first action, create `.audit/factory-ops-<YYYY-MM-DD>.tsv` (the
-UTC date) in the target repository. If the file already exists, append to
-it. Its columns:
+Before the first action, create `$CHECKOUT/.audit/factory-ops-<YYYY-MM-DD>.tsv`
+(the UTC date): the worklog lives in the operator's checkout, even for the
+rows you write while you work in a worktree. If the file already exists,
+append to it. Its columns:
 
 ```
 ts	phase	decision	why	evidence	result
@@ -209,16 +258,19 @@ do next. Strip tabs and newlines from the values. Never write a secret into
 a row. A helper that appends a row:
 
 ```sh
-wl() { f=.audit/factory-ops-$(date -u +%F).tsv; [ -f "$f" ] || printf 'ts\tphase\tdecision\twhy\tevidence\tresult\n' > "$f"
+wl() { . "$SCRATCH/forge.env"; : "${CHECKOUT:?no CHECKOUT in forge.env: run the block in Local trees}"
+       f=$CHECKOUT/.audit/factory-ops-$(date -u +%F).tsv; mkdir -p "$CHECKOUT/.audit"
+       [ -f "$f" ] || printf 'ts\tphase\tdecision\twhy\tevidence\tresult\n' > "$f"
        printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%FT%TZ)" "$@" >> "$f"; }
 ```
 
 Shell state does not persist between Bash calls, so define the helper again
 in each call that uses it, or save it as a script in the scratchpad.
 
-The worklog stays uncommitted on the default branch: the operator decides
-where it goes. If the run opens a Factory-fix PR (below), commit the worklog
-on that PR's branch too.
+The worklog is never committed, on any branch: it stays untracked in the
+checkout, next to the earlier ones, and the operator decides where it goes.
+Never `git add` it, in the checkout or in a worktree, and never copy it
+into a worktree.
 
 ## The loop
 
@@ -286,8 +338,8 @@ When a job fails:
 
 1. Read its log ("a job's log") and keep the failing lines, for example
    with `grep -E 'FAIL|error|panic' | head -60`.
-2. Check out the branch: `git fetch -q origin && git switch -c factory/issue-N --track origin/factory/issue-N`,
-   or `git switch factory/issue-N && git pull` if you already have it.
+2. Get the branch's worktree, `$SCRATCH/wt-issue-N` ("Local trees"). Steps
+   3 to 5 run in it.
 3. Reproduce the failure locally with the narrowest command the
    repository's test setup allows (in a Go repository, for example,
    `go test ./<pkg>/ -run TestName -count=1 -v`). Find the root cause. Do
@@ -300,11 +352,11 @@ When a job fails:
    secret runs locally only when the failure is in it, with the secret
    loaded the way the repository's docs say, into that one command.
    Otherwise CI runs it.
-5. Check that `git branch --show-current` prints `factory/issue-N`. The
-   operator switches branches during a session. Then make one conventional
-   commit (`fix: …` or `fix(test): …`) whose body says what failed and why,
-   ending with the attribution line from the system prompt. Push with an
-   explicit refspec: `git push origin factory/issue-N:factory/issue-N`.
+5. Check that `git -C "$SCRATCH/wt-issue-N" branch --show-current` prints
+   `factory/issue-N`. Then make one conventional commit there (`fix: …` or
+   `fix(test): …`) whose body says what failed and why, ending with the
+   attribution line from the system prompt. Push with an explicit refspec:
+   `git -C "$SCRATCH/wt-issue-N" push origin factory/issue-N:factory/issue-N`.
 6. Watch the new CI run. Repeat until every job passes.
 
 If the same job fails three times for different reasons, or the fix would
@@ -317,23 +369,24 @@ branch can move while CI runs, for example when another PR or MR lands,
 and the PR or MR stops being mergeable. Then bring it up to date by merging
 the default branch into it. Never rebase it and never force-push:
 
-1. Check out `factory/issue-N` as in step 2 of the failing-job list, then
-   `git fetch -q origin && git merge --no-ff --no-commit origin/<default branch>`.
-2. List the conflicts with `git diff --name-only --diff-filter=U`. Resolve
+1. Get the worktree as in step 2 of the failing-job list, then
+   `git -C "$SCRATCH/wt-issue-N" merge --no-ff --no-commit origin/<default branch>`.
+2. List the conflicts with
+   `git -C "$SCRATCH/wt-issue-N" diff --name-only --diff-filter=U`. Resolve
    each one by keeping both sides when they are independent (two additions
    at the same place, two edits of different things that touch the same
    lines). When the two sides cannot both be kept (they change the same
    thing in different ways, or keeping both breaks what one of them does),
-   run `git merge --abort`, leave the PR or MR open, log a `skip` row that
+   run `git -C "$SCRATCH/wt-issue-N" merge --abort`, leave the PR or MR open, log a `skip` row that
    names the conflicting files, and go on to the next issue.
 3. Run the narrowest tests that cover the files the merge touched, as in
    step 3 of the failing-job list.
-4. Check that `git branch --show-current` prints `factory/issue-N`. Commit
-   the merge with the subject `Merge origin/<default branch> into factory/issue-N`
+4. Check that `git -C "$SCRATCH/wt-issue-N" branch --show-current` prints
+   `factory/issue-N`. Commit the merge there with the subject `Merge origin/<default branch> into factory/issue-N`
    and a body that names each conflicting file and how you resolved it
    (or says there was no conflict), ending with the attribution line from
    the system prompt. Push with the explicit refspec:
-   `git push origin factory/issue-N:factory/issue-N`.
+   `git -C "$SCRATCH/wt-issue-N" push origin factory/issue-N:factory/issue-N`.
 5. Log a `fix` row with the merge commit, and watch the new CI run from the
    top of this step.
 
@@ -348,9 +401,9 @@ its CI is green.
 
 The PR or MR says `Closes #N`, so the merge closes the issue. Check that it
 did. If the issue is still open, log it and close it with a comment that
-links the PR or MR ("close an issue"). Then go back to the default branch:
-`git switch <default branch> && git pull`, and delete the local
-`factory/issue-N` branch.
+links the PR or MR ("close an issue"). Then remove `$SCRATCH/wt-issue-N`
+and the local `factory/issue-N` branch, as in "Local trees", if the run
+made them. The checkout stays as it is: do not switch or pull it.
 
 ### 6b. Wait for the fresh `:qa` image (self only)
 
@@ -499,13 +552,17 @@ A fault in the Factory on **self**: fix the Factory, then retry the issue.
    handle this issue's PR by hand (step 5), and name the tracking issue in
    the final report. For example, Go code that does not compile points at
    the coder lacking a toolchain.
-2. Otherwise, branch from `main`. The Factory's workflow runs its `:qa`
+2. Otherwise, branch from `main` in a worktree of its own: `fix/<slug>` in
+   `$SCRATCH/wt-fix-<slug>` ("Local trees"). The Factory's workflow runs its `:qa`
    image and its own action at `@main`, and CI pushes `:qa` from `main`
    (`.github/workflows/ci.yml`). So every fix takes effect after its merge,
    and any branch name works (`fix/<slug>`).
-3. Commit, push, and open a PR with a body that states the failure, the
-   evidence (run IDs) and the fix. Get its CI green as in step 5, and merge
-   it as in step 6.
+3. Commit in the worktree, push from it
+   (`git -C "$SCRATCH/wt-fix-<slug>" push origin fix/<slug>:fix/<slug>`),
+   and open a PR with a body that states the failure, the evidence (run IDs)
+   and the fix. Get its CI green as in step 5, working in
+   `$SCRATCH/wt-fix-<slug>`, and merge it as in step 6. Then remove the
+   worktree and the local `fix/<slug>` branch ("Local trees").
 4. Wait for the `:qa` image of that merge as in step 6b before retrying.
 5. Retry the issue. Close the failed PR, if there is one, with a comment
    that names the Factory fix, and delete its branch only if this run
@@ -544,4 +601,5 @@ human" with each follow-up left out for its `human:*` label (number, title,
 URL and the label), every default taken for a question
 the operator did not answer (issue, question, answer), the Bugs filed on
 the Factory's repository (tenant), any Factory root causes you saw but did
-not fix, and the worklog's path.
+not fix, the checkout's branch and commit at start and at exit, and the
+worklog's absolute path (`$CHECKOUT/.audit/factory-ops-<date>.tsv`).

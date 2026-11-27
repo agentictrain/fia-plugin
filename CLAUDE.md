@@ -28,7 +28,7 @@ holding a `forge.env`, which the "Target repository" block of
 
 ## Architecture
 
-**The skills run in someone else's repository.** Both take their target from
+**The skills run in someone else's repository.** They take their target from
 the `origin` remote of the current directory: github.com is GitHub (`gh`), any
 other host is GitLab (`glab`). Nothing about a project is hardcoded, and that
 includes the Factory itself: `fia-conductor` derives the Factory's repository
@@ -41,9 +41,17 @@ call is a new row with both columns. The two tables are separate and differ.
 
 **State is files in `$SCRATCH`**, because shell state doesn't persist between
 Bash calls. `forge.env` is the shared one, written by a derivation block that
-is duplicated in both `SKILL.md` files: fix it in both. `fia-todo` adds
-`CHECKOUT` (read by `context-lake.sh`), and `fia-conductor` appends
-`FACTORY_HOST` and `FACTORY_REPO`.
+is duplicated in every `SKILL.md`: fix it in all three. `fia-todo` adds
+`CHECKOUT` (read by `context-lake.sh`), `fia-conductor` appends
+`FACTORY_HOST` and `FACTORY_REPO`, and `fia-consumer` `BOARD_OWNER` and
+`BOARD_NUMBER`.
+
+**`fia-consumer` drives the other skills.** It invokes `fia-conductor` and
+`fia-outer-loop` (a project skill of the Factory's repository, not of this
+plugin), and answers for the operator wherever `fia-outer-loop` or
+`fia-todo` would ask. A change to how those two ask (`AskUserQuestion`, the
+➡️ recommendation, the approval of a draft) is a change to what
+`fia-consumer` answers.
 
 **`fia-todo` discloses two branches.** `context-lake.md` is read only when
 `context-lake.sh find` reports a lake, and `riu-sizing.md` only when the target
@@ -55,7 +63,8 @@ cross-referenced throughout, from `context-lake.md` too.
 **Contracts with the Factory.** The skills depend on what the Factory
 (`agentictrain/factor-ia`, a separate repository) reads and writes: its labels
 (`factory:*`, `size:*`, `class:follow-up`), comment commands
-(`/factory approve`, `/factory replan`), comment and body markers
+(`/factory approve`, `/factory replan`), the `github_project` option and the
+board's `Ready` status, comment and body markers
 (`🏭 Factory pipeline started`, `factory-followup…`), the plan headings, the
 `factory/issue-N` branch, and the `context_lake_*` options, whose validation
 `context-lake.sh` mirrors. Check a change to any of these against the

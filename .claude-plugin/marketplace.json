@@ -10,8 +10,8 @@
     {
       "name": "fia",
       "source": "./",
-      "description": "Skills for operating the Factory on a project it is installed on: fia-todo and fia-conductor.",
-      "version": "0.2.1"
+      "description": "Skills for operating the Factory on a project it is installed on: fia-todo, fia-conductor and fia-consumer.",
+      "version": "0.3.0"
     }
   ]
 }

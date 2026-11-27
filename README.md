@@ -9,7 +9,9 @@ Factory installed. It holds three skills:
   decisions against it.
 - `fia-conductor` runs issues through the Factory one at a time: trigger,
   plan, approve, build, get CI green, merge, then the follow-ups (those
-  with a `human:*` label are left for a human).
+  with a `human:*` label are left for a human). It does its git work in
+  worktrees under its scratchpad, so it leaves your checkout on the branch
+  and commit it found, and keeps its worklog untracked in `.audit/`.
 
 The skills work from a clone of the project. They read the target from its
 `origin` remote and use `gh` on github.com and `glab` on any other host,

@@ -57,7 +57,7 @@ case $P in
   *) echo "github_project must be https://github.com/orgs/<org>/projects/<number>: ${P:-unset}"; exit 1 ;;
 esac
 case $NUMBER in ''|*[!0-9]*) echo "github_project must end in a project number: $P"; exit 1 ;; esac
-printf 'BOARD_OWNER=%s\nBOARD_NUMBER=%s\n' "$OWNER" "$NUMBER" >> "$SCRATCH/forge.env"
+printf 'BOARD_OWNER=%s\nBOARD_NUMBER=%s\nCHECKOUT=%q\n' "$OWNER" "$NUMBER" "$(git rev-parse --show-toplevel)" >> "$SCRATCH/forge.env"
 gh project field-list "$NUMBER" --owner "$OWNER" --format json \
   | jq -r '.fields[] | select(.name=="Status") | .options[].name'
 ```
@@ -86,9 +86,10 @@ final report.
 
 ## Worklog and state
 
-Write to the worklog `fia-conductor` keeps (`.audit/factory-ops-<date>.tsv`,
-with its columns and its `wl` helper), with the phases `board`,
-`outer-loop` and `exit` for your own rows: one `board` row per pick or empty
+Write to the worklog `fia-conductor` keeps
+(`$CHECKOUT/.audit/factory-ops-<date>.tsv`, untracked in the operator's
+checkout and never committed, with its columns and its `wl` helper), with
+the phases `board`, `outer-loop` and `exit` for your own rows: one `board` row per pick or empty
 read, with the board URL as evidence, and one `outer-loop` row per finding
 with its outcome.
 

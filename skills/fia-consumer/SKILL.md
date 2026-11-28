@@ -57,7 +57,8 @@ case $P in
   *) echo "github_project must be https://github.com/orgs/<org>/projects/<number>: ${P:-unset}"; exit 1 ;;
 esac
 case $NUMBER in ''|*[!0-9]*) echo "github_project must end in a project number: $P"; exit 1 ;; esac
-printf 'BOARD_OWNER=%s\nBOARD_NUMBER=%s\nCHECKOUT=%q\n' "$OWNER" "$NUMBER" "$(git rev-parse --show-toplevel)" >> "$SCRATCH/forge.env"
+printf 'BOARD_OWNER=%s\nBOARD_NUMBER=%s\nCHECKOUT=%q\n' "$OWNER" "$NUMBER" "$(git rev-parse --show-toplevel)" > "$SCRATCH/consumer-board.env"
+cat "$SCRATCH/consumer-board.env" >> "$SCRATCH/forge.env"
 gh project field-list "$NUMBER" --owner "$OWNER" --format json \
   | jq -r '.fields[] | select(.name=="Status") | .options[].name'
 ```
@@ -70,7 +71,11 @@ printed.
 
 ### Read the Ready column
 
+`fia-conductor` writes `forge.env` afresh when it starts, which drops the
+board lines, so add them back first:
+
 ```sh
+grep -q '^BOARD_NUMBER=' "$SCRATCH/forge.env" || cat "$SCRATCH/consumer-board.env" >> "$SCRATCH/forge.env"
 . "$SCRATCH/forge.env"
 gh project item-list "$BOARD_NUMBER" --owner "$BOARD_OWNER" --limit 1000 --format json > "$SCRATCH/board.json"
 jq -r --arg repo "$REPO" '.items[]

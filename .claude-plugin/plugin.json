@@ -1,7 +1,7 @@
 {
   "name": "fia",
-  "description": "Skills for operating the Factory on a project it is installed on: file issues the Factory can plan from (fia-todo) and run issues through the Factory to merge, each in its own agent and several at once with parallel:<n> (fia-conductor), and work a GitHub Project's Ready column through both, filing what each run teaches (fia-consumer). GitHub and GitLab.",
-  "version": "0.4.0",
+  "description": "Skills for operating the Factory on a project it is installed on: file issues the Factory can plan from (fia-todo) and run issues through the Factory to merge, each in its own agent and several at once with parallel:<n>, validating kind:check follow-ups on the host (fia-conductor), and work a GitHub Project's Ready column through both, filing what each run teaches (fia-consumer). GitHub and GitLab.",
+  "version": "0.5.0",
   "author": {
     "name": "agentictrain"
   }

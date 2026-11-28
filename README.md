@@ -9,7 +9,13 @@ Factory installed. It holds three skills:
   decisions against it.
 - `fia-conductor` runs issues through the Factory: trigger, plan, approve,
   build, get CI green, merge, then the follow-ups (those with a `human:*`
-  label are left for a human). Each issue runs with its follow-ups in its
+  label are left for a human). A `kind:check` follow-up, or a `kind:check`
+  issue given to it, is validated on your host instead of by the Factory:
+  it runs the check's command with the host's Docker, logins and secrets
+  file, on the project and the test projects its docs list (for level 4,
+  only the affected scenarios), closes the item when it passes, runs one
+  fix through the Factory when it fails, and labels it `human:to-validate`
+  only when it cannot run it or the fix did not help. Each issue runs with its follow-ups in its
   own fresh agent, one at a time, or up to `<n>` at once with
   `parallel:<n>`; on the Factory's own repository no issue is triggered
   while one of the run's merges waits for its `:qa` image. It does its git

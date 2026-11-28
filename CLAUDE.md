@@ -63,7 +63,8 @@ cross-referenced throughout, from `context-lake.md` too.
 
 **Contracts with the Factory.** The skills depend on what the Factory
 (`agentictrain/factor-ia`, a separate repository) reads and writes: its labels
-(`factory:*`, `size:*`, `class:follow-up`), comment commands
+(`factory:*`, `size:*`, `class:follow-up`, `kind:check`,
+`human:to-validate`), comment commands
 (`/factory approve`, `/factory replan`), the `github_project` option and the
 board's `Ready` status, comment and body markers
 (`🏭 Factory pipeline started`, `factory-followup…`), the plan headings, the

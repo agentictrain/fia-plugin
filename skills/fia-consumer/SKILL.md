@@ -111,7 +111,9 @@ picked twice.
 
 ### 2. Run it through the Factory
 
-Invoke `fia:fia-conductor` with the argument `#<n>`. Follow it through to its
+First note when the run starts, for step 3:
+`date -u +%FT%TZ > "$SCRATCH/consumer-step2-ts"`. Then invoke
+`fia:fia-conductor` with the argument `#<n>`. Follow it through to its
 final report: it takes the issue and its follow-ups to merge or to a logged
 skip. The Factory moves the card as its labels change, so a handled issue
 normally leaves `Ready` by itself.
@@ -120,11 +122,28 @@ Record the conductor's outcome for the issue in `consumer-report.tsv`.
 
 ### 3. Learn from it
 
-Invoke `fia-outer-loop`, a project skill of the Factory's repository. Its
-source is this conversation: scope it to what happened since the start of
-step 2 for this issue, so a finding filed after an earlier issue is not
-filed again. Follow it through to its report, answering for the operator as
-the next section says.
+`fia-conductor` works each issue in a sub-agent of its own, so this
+conversation holds only its final report, not the CI failures, fixes and
+Factory faults the issue went through. Bring that record in first. The
+conductor ran this one issue (`#<n>` is `parallel:1`), so every worklog row
+written since step 2 started belongs to it and its follow-ups:
+
+```sh
+. "$SCRATCH/forge.env"; t=$(cat "$SCRATCH/consumer-step2-ts")
+f=${WORKLOG:-$CHECKOUT/.audit/factory-ops-$(date -u +%F).tsv}
+{ echo "## Worklog rows since $t"; awk -F'\t' -v t="$t" 'NR > 1 && $1 >= t' "$f"
+  echo; echo "## Conductor result"; cat "$SCRATCH/conductor-result-<n>.md" 2>/dev/null || echo "none written"
+} > "$SCRATCH/outer-loop-source-<n>.md"
+cat "$SCRATCH/outer-loop-source-<n>.md"
+```
+
+Then invoke `fia-outer-loop`, a project skill of the Factory's repository.
+Its source is that record, `$SCRATCH/outer-loop-source-<n>.md`, and this
+conversation since the start of step 2 for this issue; the run, pipeline
+and job IDs in the rows' `evidence` lead to the logs when a finding needs
+them ("a job's log" in `fia-conductor`). Scoping it this way keeps a finding
+filed after an earlier issue from being filed again. Follow it through to
+its report, answering for the operator as the next section says.
 
 When `fia-outer-loop` is not among your skills (the target is a tenant
 whose checkout has no such skill), log one `outer-loop` row saying so on the

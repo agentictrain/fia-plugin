@@ -7,11 +7,14 @@ Factory installed. It holds three skills:
   plan from, with its type and `size:*` label. When the project has a context
   lake, it reads it, follows its links, and asks, recommends and records
   decisions against it.
-- `fia-conductor` runs issues through the Factory one at a time: trigger,
-  plan, approve, build, get CI green, merge, then the follow-ups (those
-  with a `human:*` label are left for a human). It does its git work in
-  worktrees under its scratchpad, so it leaves your checkout on the branch
-  and commit it found, and keeps its worklog untracked in `.audit/`.
+- `fia-conductor` runs issues through the Factory: trigger, plan, approve,
+  build, get CI green, merge, then the follow-ups (those with a `human:*`
+  label are left for a human). Each issue runs with its follow-ups in its
+  own fresh agent, one at a time, or up to `<n>` at once with
+  `parallel:<n>`; on the Factory's own repository no issue is triggered
+  while one of the run's merges waits for its `:qa` image. It does its git
+  work in worktrees under its scratchpad, so it leaves your checkout on the
+  branch and commit it found, and keeps its worklog untracked in `.audit/`.
 
 The skills work from a clone of the project. They read the target from its
 `origin` remote and use `gh` on github.com and `glab` on any other host,

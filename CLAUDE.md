@@ -43,8 +43,9 @@ call is a new row with both columns. The two tables are separate and differ.
 Bash calls. `forge.env` is the shared one, written by a derivation block that
 is duplicated in every `SKILL.md`: fix it in all three. `fia-todo` adds
 `CHECKOUT` (read by `context-lake.sh`), `fia-conductor` appends
-`FACTORY_HOST` and `FACTORY_REPO`, and `fia-consumer` `BOARD_OWNER` and
-`BOARD_NUMBER`.
+`FACTORY_HOST`, `FACTORY_REPO` and `WORKLOG`, and `fia-consumer`
+`BOARD_OWNER` and `BOARD_NUMBER`, which it keeps in `consumer-board.env`
+too and adds back after each `fia-conductor` run rewrites `forge.env`.
 
 **`fia-consumer` drives the other skills.** It invokes `fia-conductor` and
 `fia-outer-loop` (a project skill of the Factory's repository, not of this

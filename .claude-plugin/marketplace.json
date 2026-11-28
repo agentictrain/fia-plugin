@@ -10,8 +10,8 @@
     {
       "name": "fia",
       "source": "./",
-      "description": "Skills for operating the Factory on a project it is installed on: fia-todo, fia-conductor and fia-consumer.",
-      "version": "0.3.2"
+      "description": "Skills for operating the Factory on a project it is installed on: fia-todo, fia-conductor (each issue in its own agent, parallel:<n> at once) and fia-consumer.",
+      "version": "0.4.0"
     }
   ]
 }

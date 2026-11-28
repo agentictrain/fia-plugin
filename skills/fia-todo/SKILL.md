@@ -496,8 +496,10 @@ otherwise have.
     to the people who use it. Number them (`AT1`, `AT2`…) so a plan step can
     cite one. Each one is an observable result a user can check (`fia`
     output or exit code, a comment on an issue, an MR or PR state), not an
-    internal detail. Cover at least the main path and the most likely failure
-    path. They say
+    internal detail. When a Given is not the current state of the named
+    project or credential, the AT names the setup that reaches it and the
+    restore afterwards. Cover at least the main path and the most likely
+    failure path. They say
     *what is checked*. How it is automated belongs under Tasks or Definition
     of done.
 
